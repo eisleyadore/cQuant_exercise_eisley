@@ -1,0 +1,106 @@
+#Eisley Adoremos, cQuant Exercise
+
+library(dplyr)
+library(data.table)
+library(tidyr)
+
+#Read in Data
+prices_2016 <- read.csv("~/cQuant_exercise_eisley/ERCOT_DA_Prices_2016.csv")
+prices_2017 <- read.csv("~/cQuant_exercise_eisley/ERCOT_DA_Prices_2017.csv")
+prices_2018 <- read.csv("~/cQuant_exercise_eisley/ERCOT_DA_Prices_2018.csv")
+prices_2019 <- read.csv("~/cQuant_exercise_eisley/ERCOT_DA_Prices_2019.csv")
+
+#Merge data sets
+prices <- rbind(prices_2016, prices_2017, prices_2018,prices_2019)
+
+#Average Price of Settlement Points
+
+#convert Date into Year and Month
+prices <- prices %>% 
+  rename(DateTime = Date) 
+
+prices$Date <- substr(prices$DateTime,1,10)
+
+prices$Year <- format(as.Date(prices$Date), "%Y")
+prices$Month <- format(as.Date(prices$Date), "%B")
+
+#find average prices, grouping by SettlementPoint, Year, and Month
+settlement_avgs <- prices %>% 
+  group_by(SettlementPoint, Year, Month) %>% 
+  summarise(AveragePrice = mean(Price))
+
+#Summarise orders alphabetically, so order back chronoligically
+settlement_avgs <- settlement_avgs %>% 
+  arrange(match(settlement_avgs$Month,month.name))
+
+#Write into csv
+write.csv(settlement_avgs, "~/cQuant_exercise_eisley/AveragePriceByMonth.csv", row.names = FALSE)
+
+
+
+#Price Volatility
+
+#filter for only Settlments with HB as a prefix
+prices_HB <- prices %>% 
+  filter(substr(SettlementPoint,1,2) == "HB")
+
+#filter for only positive prices
+prices_HB_positive <- prices_HB %>% 
+  filter(Price > 0)
+
+#find hourly volatility by getting the standard deviations, grouped by Settlement, Year, and Month
+price_volatility_HB <- prices_HB_positive %>% 
+  group_by(SettlementPoint, Year, Month) %>% 
+  summarise(HourlyVolatility = sd(Price))
+
+#Summarise orders alphabetically, so order back chronoligically
+price_volatility_HB <- price_volatility_HB %>% 
+  arrange(match(price_volatility_HB$Month,month.name))
+
+write.csv(price_volatility_HB, "~/cQuant_exercise_eisley/HourlyVolatilityByYear.csv", row.names = FALSE)
+
+#find which settlements had max volatility from hourly volatility (by year)
+price_volatility_HB_year <- price_volatility_HB %>% 
+  group_by(Year) %>% 
+  filter(HourlyVolatility == max(HourlyVolatility)) %>% 
+  rename(MaxVolatility = HourlyVolatility)
+
+#Summarise orders alphabetically, so order back chronoligically
+price_volatility_HB_year <- price_volatility_HB_year %>% 
+  arrange(match(price_volatility_HB_year$Month,month.name))
+
+write.csv(price_volatility_HB_year, "~/cQuant_exercise_eisley/MaxVolatilityByYear.csv", row.names = FALSE)
+
+
+#Data Translation and Formatting 
+
+prices_all <- rbind(prices_2016, prices_2017, prices_2018,prices_2019)
+
+#Lets try a smaller data set first to try and format
+prices_HB_BUSAVG <- prices_all %>% 
+  filter(SettlementPoint == "HB_BUSAVG")
+
+#Find Date and Time from original Data column
+prices_HB_BUSAVG <- prices_HB_BUSAVG %>% 
+  rename(DateTime = Date)
+
+prices_HB_BUSAVG$Date <- substr(prices_HB_BUSAVG$DateTime,1,10)
+prices_HB_BUSAVG$Time <- substr(prices_HB_BUSAVG$DateTime,12,19)
+
+#Through trial and error, I got dcast to get what I wanted
+spot_HB_BUSAVG <- dcast(setDT(prices_HB_BUSAVG), Date+SettlementPoint ~ rowid(Date), value.var = "Price")
+
+write.csv(spot_HB_BUSAVG, "~/cQuant_exercise_eisley/spot_HB_BUSAVG.csv", row.names = FALSE)
+
+#Tried doing what I did above with the full data set, but doesn't give what I want, 
+#having multiple uneeded rows. I could create all 15 datasets by using the above 
+#code over and over again, but I don't think that is the way you guys would 
+#want me to do it. Ran out of time trying to figure this out!
+
+prices_all <- prices_all %>% 
+  rename(DateTime = Date)
+
+prices_all$Date <- substr(prices_all$DateTime,1,10)
+prices_all$Time <- substr(prices_all$DateTime,12,19)
+
+prices_raw <- dcast(setDT(prices_all), Date+SettlementPoint ~ rowid(Date), value.var = "Price")
